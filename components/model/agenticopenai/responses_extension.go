@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 	"github.com/go-viper/mapstructure/v2"
 )
@@ -31,7 +32,7 @@ type ServerToolCallArguments struct {
 	CodeInterpreter *CodeInterpreterArguments `json:"code_interpreter,omitempty" mapstructure:"code_interpreter,omitempty"`
 	ImageGeneration *ImageGenerationArguments `json:"image_generation,omitempty" mapstructure:"image_generation,omitempty"`
 	Shell           *ShellArguments           `json:"shell,omitempty" mapstructure:"shell,omitempty"`
-	ToolSearch      *ToolSearchCall           `json:"tool_search,omitempty"`
+	ToolSearch      *ToolSearchCall           `json:"tool_search,omitempty" mapstructure:"-"`
 }
 
 type ServerToolResult struct {
@@ -40,7 +41,7 @@ type ServerToolResult struct {
 	CodeInterpreter *CodeInterpreterResult `json:"code_interpreter,omitempty" mapstructure:"code_interpreter,omitempty"`
 	ImageGeneration *ImageGenerationResult `json:"image_generation,omitempty" mapstructure:"image_generation,omitempty"`
 	Shell           *ShellResult           `json:"shell,omitempty" mapstructure:"shell,omitempty"`
-	ToolSearch      *ToolSearchResult      `json:"tool_search,omitempty"`
+	ToolSearch      *ToolSearchResult      `json:"tool_search,omitempty" mapstructure:"-"`
 }
 
 // WebSearchArguments represents the arguments for a web search tool call.
@@ -266,11 +267,19 @@ type ShellOutputOutcomeExit struct {
 }
 
 type ToolSearchCall struct {
-	Arguments json.RawMessage `json:"arguments"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 type ToolSearchResult struct {
 	Tools []*schema.ToolInfo `json:"tools"`
+}
+
+func unmarshalFromMap(m map[string]any, v any) error {
+	bs, err := sonic.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return sonic.Unmarshal(bs, v)
 }
 
 func getServerToolCallArguments(call *schema.ServerToolCall) (*ServerToolCallArguments, error) {
@@ -284,6 +293,14 @@ func getServerToolCallArguments(call *schema.ServerToolCall) (*ServerToolCallArg
 		args := &ServerToolCallArguments{}
 		if err := mapstructure.Decode(m, args); err != nil {
 			return nil, fmt.Errorf("failed to decode server tool call arguments: %w", err)
+		}
+		if ts, ok := m["tool_search"]; ok {
+			if tsMap, ok := ts.(map[string]any); ok {
+				args.ToolSearch = &ToolSearchCall{}
+				if err := unmarshalFromMap(tsMap, args.ToolSearch); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal tool_search arguments: %w", err)
+				}
+			}
 		}
 		return args, nil
 	}
@@ -301,6 +318,14 @@ func getServerToolResult(res *schema.ServerToolResult) (*ServerToolResult, error
 		result := &ServerToolResult{}
 		if err := mapstructure.Decode(m, result); err != nil {
 			return nil, fmt.Errorf("failed to decode server tool result: %w", err)
+		}
+		if ts, ok := m["tool_search"]; ok {
+			if tsMap, ok := ts.(map[string]any); ok {
+				result.ToolSearch = &ToolSearchResult{}
+				if err := unmarshalFromMap(tsMap, result.ToolSearch); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal tool_search result: %w", err)
+				}
+			}
 		}
 		return result, nil
 	}
